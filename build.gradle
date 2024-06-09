@@ -5,6 +5,9 @@ plugins {
 group 'org.streamer'
 version '1.0-SNAPSHOT'
 
+sourceCompatibility = 1.18
+targetCompatibility = 1.18
+
 repositories {
     mavenCentral()
 }
