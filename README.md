@@ -1,7 +1,7 @@
 # Streamer
 ### Java stream utility library, which someone can find useful 
 
-## Usage and StreamUtils class overview
+### Usage and StreamUtils class overview
 
 ## Overview
 `StreamUtils` is a utility class providing various helpful methods for working with Java Streams. It includes methods for stream creation, transformation, collection, and more.
