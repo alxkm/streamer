@@ -1,4 +1,8 @@
 # Streamer
+
+[![Java CI with Gradle](https://github.com/alxkm/streamer/actions/workflows/gradle.yml/badge.svg)](https://github.com/alxkm/streamer/actions/workflows/gradle.yml)[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+
 ### Java stream utility library, which someone can find useful 
 
 ### Usage and StreamUtils class overview
