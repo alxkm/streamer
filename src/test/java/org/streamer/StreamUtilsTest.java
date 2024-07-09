@@ -253,4 +253,13 @@ public class StreamUtilsTest {
         );
         assertEquals(expected, result.toList());
     }
+
+    @Test
+    public void testCustomRangeAsStream() {
+        int start = 1;
+        int end = 6;
+        List<Integer> expected = Arrays.asList(1, 2, 3, 4, 5);
+        List<Integer> result = StreamUtils.customRangeAsStream(start, end).collect(Collectors.toList());
+        assertEquals(expected, result);
+    }
 }
