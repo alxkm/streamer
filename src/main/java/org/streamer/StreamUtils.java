@@ -391,6 +391,53 @@ public final class StreamUtils {
         AtomicInteger index = new AtomicInteger(0);
         return stream.map(elem -> new Pair<>(index.getAndIncrement(), elem));
     }
+
+    static class RangeSpliterator implements Spliterator<Integer> {
+        private final int start;
+        private final int end;
+        private int current;
+
+        public RangeSpliterator(int start, int end) {
+            this.start = start;
+            this.end = end;
+            this.current = start;
+        }
+
+        @Override
+        public boolean tryAdvance(Consumer<? super Integer> action) {
+            if (current < end) {
+                action.accept(current++);
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public Spliterator<Integer> trySplit() {
+            int mid = (current + end) >>> 1;
+            if (mid <= current) {
+                return null;
+            }
+            int oldCurrent = current;
+            current = mid;
+            return new RangeSpliterator(oldCurrent, mid);
+        }
+
+        @Override
+        public long estimateSize() {
+            return end - current;
+        }
+
+        @Override
+        public int characteristics() {
+            return ORDERED | SIZED | SUBSIZED | IMMUTABLE;
+        }
+    }
+
+    public static Stream<Integer> customRangeAsStream(int start, int end) {
+        Spliterator<Integer> spliterator = new RangeSpliterator(start, end);
+        return StreamSupport.stream(spliterator, false);
+    }
 }
 
 // Helper Pair class
