@@ -86,7 +86,7 @@ public final class StreamUtils {
      * @return a collection containing elements from the array
      * @throws IllegalArgumentException if the collection creation fails
      */
-    public static <T> Collection<T> arrayToCollection(final Class<? extends Collection<T>> collectionType, final T[] array) {
+    public static <T> Collection<T> arrayToCollection(final Class<? extends Collection> collectionType, final T[] array) {
         try {
             final Collection<T> collection = collectionType.getDeclaredConstructor().newInstance();
             collection.addAll(Arrays.asList(array));
