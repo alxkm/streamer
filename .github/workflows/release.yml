@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The tag only gets a release if the build that produced the jars is green.
+      - name: Build and verify
+        run: ./gradlew build --stacktrace
+
+      - name: Check the tag matches the project version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(./gradlew -q properties --property version | awk '/^version:/ {print $2}')
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match build.gradle version $version" >&2
+            exit 1
+          fi
+
+      - name: Extract the changelog section for this version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          awk -v version="$tag" '
+            $0 ~ "^## \[?" version "\]?" { inside = 1; next }
+            inside && /^## / { exit }
+            inside { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No CHANGELOG.md section found for $tag" >&2
+            exit 1
+          fi
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: |
+            build/libs/*.jar

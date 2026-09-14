@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not behave the way the Javadoc says it should
+labels: [ bug ]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Reproducer
+      description: The smallest snippet that shows the problem. A failing JUnit test is ideal.
+      render: java
+      placeholder: |
+        List<Integer> result = StreamUtils.batch(Stream.of(1, 2, 3), 2).toList();
+        // expected [[1, 2], [3]] but got ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Streamer version
+      placeholder: 2.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      description: Output of java -version
+      placeholder: temurin 17.0.11
+    validations:
+      required: true
+
+  - type: textarea
+    id: stacktrace
+    attributes:
+      label: Stack trace
+      description: If an exception was thrown, paste the full trace.
+      render: text
