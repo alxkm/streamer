@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question about usage
+    url: https://github.com/alxkm/streamer/discussions
+    about: Ask how to combine the operators, or whether one fits your case.

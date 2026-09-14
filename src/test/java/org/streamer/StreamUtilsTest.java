@@ -1,265 +1,731 @@
 package org.streamer;
 
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.function.Function;
+import java.util.TreeSet;
+import java.util.Vector;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class StreamUtilsTest {
-    @Test
-    public void uniqueCollectorTest() {
-        final List<Integer> actual = Stream.of(1, 2, 3, 4, 3, 4, 5).collect(StreamUtils.unique());
-        final List<Integer> expected = List.of(1, 2, 3, 4, 5);
-        assertEquals(actual.size(), expected.size());
+class StreamUtilsTest {
+
+    @Nested
+    @DisplayName("creation")
+    class Creation {
+
+        @Test
+        void asStreamReadsAnIterator() {
+            Iterator<String> iterator = List.of("a", "b", "c").iterator();
+
+            assertThat(StreamUtils.asStream(iterator)).containsExactly("a", "b", "c");
+        }
+
+        @Test
+        void asStreamOfAnExhaustedIteratorIsEmpty() {
+            assertThat(StreamUtils.asStream(Collections.emptyIterator())).isEmpty();
+        }
+
+        @Test
+        void asStreamReadsAnIterable() {
+            Iterable<String> iterable = new ArrayDeque<>(List.of("a", "b"));
+
+            assertThat(StreamUtils.asStream(iterable)).containsExactly("a", "b");
+        }
+
+        @Test
+        void asStreamReadsAnEnumeration() {
+            Enumeration<String> enumeration = new Vector<>(List.of("a", "b")).elements();
+
+            assertThat(StreamUtils.asStream(enumeration)).containsExactly("a", "b");
+        }
+
+        @Test
+        void asStreamIsLazy() {
+            AtomicInteger pulled = new AtomicInteger();
+            Iterator<Integer> counting = new Iterator<>() {
+                private int next;
+
+                @Override
+                public boolean hasNext() {
+                    return true;
+                }
+
+                @Override
+                public Integer next() {
+                    pulled.incrementAndGet();
+                    return next++;
+                }
+            };
+
+            List<Integer> firstThree = StreamUtils.asStream(counting).limit(3).toList();
+
+            assertThat(firstThree).containsExactly(0, 1, 2);
+            assertThat(pulled).hasValueLessThan(10);
+        }
+
+        @Test
+        void ofNullableWrapsAValue() {
+            assertThat(StreamUtils.ofNullable("a")).containsExactly("a");
+        }
+
+        @Test
+        void ofNullableOfNullIsEmpty() {
+            assertThat(StreamUtils.ofNullable(null)).isEmpty();
+        }
+
+        @Test
+        void rangeCoversTheHalfOpenInterval() {
+            assertThat(StreamUtils.range(1, 6)).containsExactly(1, 2, 3, 4, 5);
+        }
+
+        @Test
+        void rangeIsEmptyWhenInvertedOrDegenerate() {
+            assertThat(StreamUtils.range(5, 5)).isEmpty();
+            assertThat(StreamUtils.range(5, 1)).isEmpty();
+        }
+
+        @Test
+        void rangeKeepsEveryValueWhenSplitInParallel() {
+            List<Integer> parallel = StreamUtils.range(0, 10_000).parallel().toList();
+
+            assertThat(parallel).hasSize(10_000).isSorted();
+            assertThat(parallel.get(0)).isZero();
+            assertThat(parallel.get(9_999)).isEqualTo(9_999);
+        }
+
+        @Test
+        void rangeReportsItsExactSize() {
+            assertThat(StreamUtils.range(3, 9).spliterator().getExactSizeIfKnown()).isEqualTo(6);
+        }
+
+        @Test
+        void concatKeepsArgumentOrder() {
+            Stream<String> result =
+                    StreamUtils.concat(Stream.of("a", "b"), Stream.empty(), Stream.of("c"));
+
+            assertThat(result).containsExactly("a", "b", "c");
+        }
+
+        @Test
+        void concatOfNothingIsEmpty() {
+            assertThat(StreamUtils.<String>concat()).isEmpty();
+        }
+
+        @Test
+        void concatRejectsANullStreamUpFront() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> StreamUtils.concat(Stream.of("a"), null))
+                    .withMessageContaining("null element");
+        }
     }
 
-    @Test
-    public void testArrayToArrayList() {
-        String[] stringArray = {"apple", "banana", "orange"};
-        Collection<String> convertedList = StreamUtils.arrayToCollection(ArrayList.class, stringArray);
-        assertEquals(Arrays.asList(stringArray), new ArrayList<>(convertedList),
-                "ArrayList conversion failed");
+    @Nested
+    @DisplayName("filtering")
+    class Filtering {
+
+        @Test
+        void filterByTypeKeepsAndCastsMatchingElements() {
+            Stream<Object> mixed = Stream.of(1, "two", 3, "four");
+
+            assertThat(StreamUtils.filterByType(mixed, String.class)).containsExactly("two", "four");
+        }
+
+        @Test
+        void filterByTypeMatchesSubtypes() {
+            Stream<Object> numbers = Stream.of(1, 2L, 3.0, "four");
+
+            assertThat(StreamUtils.filterByType(numbers, Number.class)).containsExactly(1, 2L, 3.0);
+        }
+
+        @Test
+        void filterNotIsTheComplementOfFilter() {
+            assertThat(StreamUtils.filterNot(Stream.of(1, 2, 3, 4, 5), even()))
+                    .containsExactly(1, 3, 5);
+        }
+
+        @Test
+        void distinctByKeepsTheFirstElementPerKey() {
+            Stream<String> fruit = Stream.of("apple", "avocado", "banana", "blueberry");
+
+            assertThat(StreamUtils.distinctBy(fruit, s -> s.charAt(0)))
+                    .containsExactly("apple", "banana");
+        }
+
+        @Test
+        void distinctByKeyIsUsableAsAPlainPredicate() {
+            List<String> result = Stream.of("apple", "banana", "apricot", "cherry")
+                    .filter(StreamUtils.distinctByKey(s -> s.charAt(0)))
+                    .toList();
+
+            assertThat(result).containsExactly("apple", "banana", "cherry");
+        }
+
+        @Test
+        void distinctByKeyIsSafeOnAParallelStream() {
+            List<Integer> result = IntStream.range(0, 10_000)
+                    .boxed()
+                    .parallel()
+                    .filter(StreamUtils.distinctByKey(i -> i % 100))
+                    .toList();
+
+            assertThat(result).hasSize(100);
+            assertThat(result.stream().map(i -> i % 100).collect(Collectors.toSet())).hasSize(100);
+        }
+
+        @Test
+        void takeUntilIncludesTheMatchingElement() {
+            assertThat(StreamUtils.takeUntil(Stream.of(1, 2, 3, 4, 5), x -> x == 3))
+                    .containsExactly(1, 2, 3);
+        }
+
+        @Test
+        void takeUntilWithoutAMatchKeepsEverything() {
+            assertThat(StreamUtils.takeUntil(Stream.of(1, 2, 3), x -> x > 10))
+                    .containsExactly(1, 2, 3);
+        }
+
+        @Test
+        void takeUntilAcceptsASortedSource() {
+            // Regression: the wrapper used to inherit SORTED from the source without being able to
+            // answer getComparator(), which the pipeline calls whenever SORTED is reported.
+            assertThat(StreamUtils.takeUntil(StreamUtils.range(1, 10), x -> x == 3))
+                    .containsExactly(1, 2, 3);
+        }
+
+        @Test
+        void takeUntilStopsPullingAfterTheMatch() {
+            AtomicInteger pulled = new AtomicInteger();
+            Stream<Integer> counted = Stream.iterate(1, x -> x + 1).peek(x -> pulled.incrementAndGet());
+
+            assertThat(StreamUtils.takeUntil(counted, x -> x == 3)).containsExactly(1, 2, 3);
+            assertThat(pulled).hasValue(3);
+        }
     }
 
-    @Test
-    public void testArrayToHashSet() {
-        Integer[] intArray = {1, 2, 3, 4, 5};
-        Collection<Integer> convertedSet = StreamUtils.arrayToCollection(HashSet.class, intArray);
-        assertEquals(new HashSet<>(Arrays.asList(intArray)), new HashSet<>(convertedSet),
-                "HashSet conversion failed");
+    @Nested
+    @DisplayName("reshaping")
+    class Reshaping {
+
+        @Test
+        void zipPairsElementsPositionally() {
+            Stream<String> letters = Stream.of("a", "b");
+            Stream<Integer> numbers = Stream.of(1, 2);
+
+            assertThat(StreamUtils.zip(letters, numbers))
+                    .containsExactly(Pair.of("a", 1), Pair.of("b", 2));
+        }
+
+        @Test
+        void zipStopsAtTheShorterInput() {
+            Stream<String> letters = Stream.of("a", "b", "c");
+            Stream<Integer> numbers = Stream.of(1);
+
+            assertThat(StreamUtils.zip(letters, numbers)).containsExactly(Pair.of("a", 1));
+        }
+
+        @Test
+        void zipDoesNotPullPastTheShorterInput() {
+            AtomicInteger pulled = new AtomicInteger();
+            Stream<Integer> endless = Stream.iterate(1, x -> x + 1).peek(x -> pulled.incrementAndGet());
+
+            assertThat(StreamUtils.zip(Stream.of("a"), endless)).hasSize(1);
+            assertThat(pulled).hasValue(1);
+        }
+
+        @Test
+        void zipWithACombinerAppliesIt() {
+            Stream<String> names = Stream.of("ann", "bob");
+            Stream<Integer> scores = Stream.of(7, 9);
+
+            assertThat(StreamUtils.zip(names, scores, (name, score) -> name + "=" + score))
+                    .containsExactly("ann=7", "bob=9");
+        }
+
+        @Test
+        void zipOfAnEmptyStreamIsEmpty() {
+            assertThat(StreamUtils.zip(Stream.<String>empty(), Stream.of(1))).isEmpty();
+            assertThat(StreamUtils.zip(Stream.of(1), Stream.<String>empty())).isEmpty();
+        }
+
+        @Test
+        void zipWithIndexNumbersFromZero() {
+            assertThat(StreamUtils.zipWithIndex(Stream.of("a", "b", "c")))
+                    .containsExactly(Pair.of(0, "a"), Pair.of(1, "b"), Pair.of(2, "c"));
+        }
+
+        @Test
+        void zipWithIndexStaysCorrectOnAParallelSource() {
+            List<Pair<Integer, Integer>> indexed =
+                    StreamUtils.zipWithIndex(IntStream.range(0, 1_000).boxed().parallel()).toList();
+
+            assertThat(indexed).hasSize(1_000);
+            assertThat(indexed).allSatisfy(pair -> assertThat(pair.first()).isEqualTo(pair.second()));
+        }
+
+        @Test
+        void batchSplitsIntoFixedSizeChunks() {
+            assertThat(StreamUtils.batch(Stream.of(1, 2, 3, 4, 5, 6), 2))
+                    .containsExactly(List.of(1, 2), List.of(3, 4), List.of(5, 6));
+        }
+
+        @Test
+        void batchKeepsAShorterTail() {
+            assertThat(StreamUtils.batch(Stream.of(1, 2, 3, 4, 5), 2))
+                    .containsExactly(List.of(1, 2), List.of(3, 4), List.of(5));
+        }
+
+        @Test
+        void batchOfAnEmptyStreamIsEmpty() {
+            assertThat(StreamUtils.batch(Stream.empty(), 3)).isEmpty();
+        }
+
+        @Test
+        void batchesAreImmutable() {
+            List<Integer> batch = StreamUtils.batch(Stream.of(1, 2), 2).findFirst().orElseThrow();
+
+            assertThatThrownBy(() -> batch.add(3)).isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {0, -1, Integer.MIN_VALUE})
+        void batchRejectsANonPositiveSize(int batchSize) {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> StreamUtils.batch(Stream.of(1), batchSize))
+                    .withMessageContaining("batchSize must be at least 1");
+        }
+
+        @Test
+        void windowedSlidesOneElementAtATime() {
+            assertThat(StreamUtils.windowed(Stream.of(1, 2, 3, 4), 2))
+                    .containsExactly(List.of(1, 2), List.of(2, 3), List.of(3, 4));
+        }
+
+        @Test
+        void windowedHonoursTheStep() {
+            assertThat(StreamUtils.windowed(Stream.of(1, 2, 3, 4, 5, 6), 2, 3))
+                    .containsExactly(List.of(1, 2), List.of(4, 5));
+        }
+
+        @Test
+        void windowedDropsAnIncompleteTail() {
+            assertThat(StreamUtils.windowed(Stream.of(1, 2, 3, 4, 5), 2, 2))
+                    .containsExactly(List.of(1, 2), List.of(3, 4));
+        }
+
+        @Test
+        void windowedSkipsElementsWhenTheStepExceedsTheWindow() {
+            assertThat(StreamUtils.windowed(StreamUtils.range(1, 11), 2, 5))
+                    .containsExactly(List.of(1, 2), List.of(6, 7));
+        }
+
+        @Test
+        void windowedIsEmptyWhenTheSourceIsShorterThanTheWindow() {
+            assertThat(StreamUtils.windowed(Stream.of(1, 2), 5)).isEmpty();
+        }
+
+        @Test
+        void windowedRejectsNonPositiveArguments() {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> StreamUtils.windowed(Stream.of(1), 0));
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> StreamUtils.windowed(Stream.of(1), 2, 0));
+        }
+
+        @Test
+        void groupAdjacentSplitsOnTheBoundary() {
+            Stream<Integer> values = Stream.of(1, 1, 2, 2, 2, 3, 1);
+
+            assertThat(StreamUtils.groupAdjacent(values, Integer::equals))
+                    .containsExactly(List.of(1, 1), List.of(2, 2, 2), List.of(3), List.of(1));
+        }
+
+        @Test
+        void groupAdjacentOfASingleElementYieldsOneGroup() {
+            assertThat(StreamUtils.groupAdjacent(Stream.of("a"), String::equals))
+                    .containsExactly(List.of("a"));
+        }
+
+        @Test
+        void groupAdjacentOfAnEmptyStreamIsEmpty() {
+            assertThat(StreamUtils.groupAdjacent(Stream.<String>empty(), String::equals)).isEmpty();
+        }
+
+        @Test
+        void groupAdjacentByGroupsRunsWithTheSameKey() {
+            Stream<String> words = Stream.of("ant", "ape", "bee", "cow", "cat", "ant");
+
+            assertThat(StreamUtils.groupAdjacentBy(words, word -> word.charAt(0)))
+                    .containsExactly(
+                            List.of("ant", "ape"), List.of("bee"),
+                            List.of("cow", "cat"), List.of("ant"));
+        }
+
+        @Test
+        void groupAdjacentByTreatsNullKeysAsEqual() {
+            Stream<String> words = Stream.of("aa", "ab", "b");
+
+            assertThat(StreamUtils.groupAdjacentBy(words, word -> null))
+                    .containsExactly(List.of("aa", "ab", "b"));
+        }
+
+        @Test
+        void groupAdjacentByComputesEachKeyOnce() {
+            AtomicInteger calls = new AtomicInteger();
+
+            List<List<Integer>> groups = StreamUtils
+                    .groupAdjacentBy(StreamUtils.range(0, 100), value -> {
+                        calls.incrementAndGet();
+                        return value / 10;
+                    })
+                    .toList();
+
+            assertThat(groups).hasSize(10);
+            assertThat(calls).hasValue(100);
+        }
+
+        @Test
+        void groupAdjacentByOfAnEmptyStreamIsEmpty() {
+            assertThat(StreamUtils.groupAdjacentBy(Stream.<String>empty(), String::length)).isEmpty();
+        }
+
+        @Test
+        void splitByCutsAtTheDelimiterAndDropsIt() {
+            Stream<String> lines = Stream.of("a", "b", "", "c", "", "d", "e");
+
+            assertThat(StreamUtils.splitBy(lines, String::isEmpty))
+                    .containsExactly(List.of("a", "b"), List.of("c"), List.of("d", "e"));
+        }
+
+        @Test
+        void splitByKeepsEmptySegmentsBetweenConsecutiveDelimiters() {
+            assertThat(StreamUtils.splitBy(Stream.of(1, 0, 0, 2), value -> value == 0))
+                    .containsExactly(List.of(1), List.of(), List.of(2));
+        }
+
+        @Test
+        void splitByEmitsALeadingEmptySegmentWhenTheStreamStartsWithADelimiter() {
+            assertThat(StreamUtils.splitBy(Stream.of(0, 1), value -> value == 0))
+                    .containsExactly(List.of(), List.of(1));
+        }
+
+        @Test
+        void splitByAddsNoTrailingSegmentWhenTheStreamEndsOnADelimiter() {
+            assertThat(StreamUtils.splitBy(Stream.of(1, 2, 0), value -> value == 0))
+                    .containsExactly(List.of(1, 2));
+        }
+
+        @Test
+        void splitByWithoutAnyDelimiterYieldsOneSegment() {
+            assertThat(StreamUtils.splitBy(Stream.of(1, 2, 3), value -> value == 9))
+                    .containsExactly(List.of(1, 2, 3));
+        }
+
+        @Test
+        void splitByOfAnEmptyStreamIsEmpty() {
+            assertThat(StreamUtils.splitBy(Stream.<Integer>empty(), value -> true)).isEmpty();
+        }
+
+        @Test
+        void splitSegmentsAreImmutable() {
+            List<Integer> segment =
+                    StreamUtils.splitBy(Stream.of(1, 2), value -> false).findFirst().orElseThrow();
+
+            assertThatThrownBy(() -> segment.add(3))
+                    .isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        void scanEmitsTheSeedThenEveryRunningValue() {
+            assertThat(StreamUtils.scan(Stream.of(1, 2, 3), 0, Integer::sum))
+                    .containsExactly(0, 1, 3, 6);
+        }
+
+        @Test
+        void scanOfAnEmptyStreamEmitsOnlyTheSeed() {
+            assertThat(StreamUtils.scan(Stream.<Integer>empty(), 42, Integer::sum))
+                    .containsExactly(42);
+        }
+
+        @Test
+        void scanCanChangeTheElementType() {
+            assertThat(StreamUtils.scan(Stream.of("a", "b"), "", String::concat))
+                    .containsExactly("", "a", "ab");
+        }
+
+        @Test
+        void flatMapToPairCarriesTheSourceElement() {
+            Stream<String> letters = Stream.of("a", "b");
+
+            assertThat(StreamUtils.flatMapToPair(letters, s -> Stream.of(1, 2)))
+                    .containsExactly(
+                            Pair.of("a", 1), Pair.of("a", 2),
+                            Pair.of("b", 1), Pair.of("b", 2));
+        }
     }
 
-    @Test
-    public void testIteratorAsStream() {
-        List<String> list = Arrays.asList("apple", "banana", "orange");
-        Iterator<String> iterator = list.iterator();
-        Stream<String> streamFromIterator = StreamUtils.asStream(iterator);
-        assertNotNull(streamFromIterator);
-        List<String> collectedList = streamFromIterator.collect(Collectors.toList());
-        assertEquals(list.size(), collectedList.size());
-        assertTrue(collectedList.containsAll(list));
+    @Nested
+    @DisplayName("merging")
+    class Merging {
+
+        @Test
+        void interleaveAlternatesBetweenBothStreams() {
+            assertThat(StreamUtils.interleave(Stream.of(1, 3, 5), Stream.of(2, 4, 6)))
+                    .containsExactly(1, 2, 3, 4, 5, 6);
+        }
+
+        @Test
+        void interleaveAppendsTheRemainderOfTheLongerStream() {
+            assertThat(StreamUtils.interleave(Stream.of(1), Stream.of(2, 4, 6)))
+                    .containsExactly(1, 2, 4, 6);
+            assertThat(StreamUtils.interleave(Stream.of(1, 3, 5), Stream.of(2)))
+                    .containsExactly(1, 2, 3, 5);
+        }
+
+        @Test
+        void interleaveOfTwoEmptyStreamsIsEmpty() {
+            assertThat(StreamUtils.interleave(Stream.empty(), Stream.empty())).isEmpty();
+        }
+
+        @Test
+        void interleaveRejectsReadingPastTheEnd() {
+            Iterator<Integer> iterator =
+                    StreamUtils.interleave(Stream.of(1), Stream.<Integer>empty()).iterator();
+            iterator.next();
+
+            assertThatThrownBy(iterator::next).isInstanceOf(NoSuchElementException.class);
+        }
+
+        @Test
+        void mergeSortedProducesASortedStream() {
+            Stream<Integer> left = Stream.of(1, 4, 7);
+            Stream<Integer> right = Stream.of(2, 3, 8);
+
+            assertThat(StreamUtils.mergeSorted(left, right, Comparator.naturalOrder()))
+                    .containsExactly(1, 2, 3, 4, 7, 8);
+        }
+
+        @Test
+        void mergeSortedHandlesAnEmptySide() {
+            assertThat(StreamUtils.mergeSorted(Stream.of(1, 2), Stream.empty(), Comparator.<Integer>naturalOrder()))
+                    .containsExactly(1, 2);
+            assertThat(StreamUtils.mergeSorted(Stream.empty(), Stream.of(1, 2), Comparator.<Integer>naturalOrder()))
+                    .containsExactly(1, 2);
+        }
+
+        @Test
+        void mergeSortedIsStableOnTies() {
+            record Item(String source, int key) { }
+            Stream<Item> left = Stream.of(new Item("L", 1), new Item("L", 2));
+            Stream<Item> right = Stream.of(new Item("R", 1), new Item("R", 2));
+
+            List<String> sources = StreamUtils
+                    .mergeSorted(left, right, Comparator.comparingInt(Item::key))
+                    .map(Item::source)
+                    .toList();
+
+            assertThat(sources).containsExactly("L", "R", "L", "R");
+        }
+
+        @Test
+        void mergeSortedAcceptsNullElementsWhenTheComparatorDoes() {
+            Stream<String> left = Stream.of(null, "c");
+            Stream<String> right = Stream.of("a", "b");
+
+            assertThat(StreamUtils.mergeSorted(
+                    left, right, Comparator.nullsFirst(Comparator.<String>naturalOrder())))
+                    .containsExactly(null, "a", "b", "c");
+        }
+
+        @Test
+        void mergeSortedOfTwoEmptyStreamsIsEmpty() {
+            assertThat(StreamUtils.mergeSorted(
+                    Stream.empty(), Stream.empty(), Comparator.<Integer>naturalOrder())).isEmpty();
+        }
+
+        @Test
+        void mergeSortedRejectsReadingPastTheEnd() {
+            Iterator<Integer> iterator = StreamUtils
+                    .mergeSorted(Stream.of(1), Stream.<Integer>empty(), Comparator.<Integer>naturalOrder())
+                    .iterator();
+            iterator.next();
+
+            assertThatThrownBy(iterator::next).isInstanceOf(NoSuchElementException.class);
+        }
     }
 
-    @Test
-    public void testEmptyIteratorAsStream() {
-        List<String> list = Collections.emptyList();
-        Iterator<String> emptyIterator = list.iterator();
-        Stream<String> streamFromEmptyIterator = StreamUtils.asStream(emptyIterator);
-        assertNotNull(streamFromEmptyIterator);
-        List<String> collectedList = streamFromEmptyIterator.collect(Collectors.toList());
-        assertTrue(collectedList.isEmpty());
+    @Nested
+    @DisplayName("conversion")
+    class Conversion {
+
+        @Test
+        void arrayToCollectionFillsTheSuppliedCollection() {
+            TreeSet<String> sorted =
+                    StreamUtils.arrayToCollection(TreeSet::new, new String[] {"c", "a", "b"});
+
+            assertThat(sorted).containsExactly("a", "b", "c");
+        }
+
+        @Test
+        void arrayToCollectionKeepsDuplicatesInAList() {
+            LinkedList<Integer> list =
+                    StreamUtils.arrayToCollection(LinkedList::new, new Integer[] {1, 1, 2});
+
+            assertThat(list).containsExactly(1, 1, 2);
+        }
+
+        @Test
+        void arrayToCollectionRejectsAFactoryReturningNull() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> StreamUtils.arrayToCollection(() -> null, new String[0]))
+                    .withMessageContaining("factory returned null");
+        }
+
+        @Test
+        void reflectiveArrayToCollectionBuildsTheRequestedType() {
+            Collection<String> list =
+                    StreamUtils.arrayToCollection(ArrayList.class, new String[] {"a", "b"});
+
+            assertThat(list).isInstanceOf(ArrayList.class).containsExactly("a", "b");
+        }
+
+        @Test
+        void reflectiveArrayToCollectionDeduplicatesIntoASet() {
+            Collection<Integer> set =
+                    StreamUtils.arrayToCollection(java.util.HashSet.class, new Integer[] {1, 2, 2});
+
+            assertThat(set).isInstanceOf(Set.class).containsExactlyInAnyOrder(1, 2);
+        }
+
+        @Test
+        void reflectiveArrayToCollectionReportsAnUninstantiableType() {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> StreamUtils.arrayToCollection(Collection.class, new String[0]))
+                    .withMessageContaining("public no-argument constructor")
+                    .withCauseInstanceOf(NoSuchMethodException.class);
+        }
     }
 
-    @Test
-    public void testIterableAsStream() {
-        List<String> list = Arrays.asList("apple", "banana", "orange");
-        Stream<String> streamFromIterable = StreamUtils.asStream(list);
-        assertNotNull(streamFromIterable);
-        List<String> collectedList = streamFromIterable.collect(Collectors.toList());
-        assertEquals(list.size(), collectedList.size());
-        assertTrue(collectedList.containsAll(list));
+    @Nested
+    @DisplayName("contracts")
+    class Contracts {
+
+        @Test
+        void theClassCannotBeInstantiated() throws Exception {
+            var constructor = StreamUtils.class.getDeclaredConstructor();
+            constructor.setAccessible(true);
+
+            assertThatThrownBy(constructor::newInstance).hasRootCauseInstanceOf(AssertionError.class);
+        }
+
+        @Test
+        void everyOperatorRejectsNullArguments() {
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.asStream((Iterator<?>) null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.asStream((Iterable<?>) null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.asStream((Enumeration<?>) null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.filterByType(null, String.class));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.filterByType(Stream.empty(), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.filterNot(null, even()));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.filterNot(Stream.of(1), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.distinctBy(null, x -> x));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.distinctByKey(null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.takeUntil(null, even()));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.takeUntil(Stream.of(1), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.zip(null, Stream.empty()));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.zip(Stream.empty(), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.zip(Stream.empty(), Stream.empty(), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.zipWithIndex(null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.batch(null, 1));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.windowed(null, 1));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.groupAdjacent(null, Object::equals));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.groupAdjacent(Stream.of(1), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.groupAdjacentBy(null, x -> x));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.groupAdjacentBy(Stream.of(1), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.splitBy(null, x -> true));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.splitBy(Stream.of(1), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.scan(null, 0, Integer::sum));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.scan(Stream.of(1), 0, null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.flatMapToPair(null, Stream::of));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.flatMapToPair(Stream.of(1), null));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.interleave(null, Stream.empty()));
+            assertThatNullPointerException().isThrownBy(() -> StreamUtils.interleave(Stream.empty(), null));
+            assertThatNullPointerException().isThrownBy(() ->
+                    StreamUtils.mergeSorted(null, Stream.empty(), Comparator.<Integer>naturalOrder()));
+            assertThatNullPointerException().isThrownBy(() ->
+                    StreamUtils.mergeSorted(Stream.empty(), null, Comparator.<Integer>naturalOrder()));
+            assertThatNullPointerException().isThrownBy(() ->
+                    StreamUtils.mergeSorted(Stream.empty(), Stream.empty(), null));
+            assertThatNullPointerException().isThrownBy(() ->
+                    StreamUtils.arrayToCollection((java.util.function.Supplier<List<String>>) null,
+                            new String[0]));
+            assertThatNullPointerException().isThrownBy(() ->
+                    StreamUtils.arrayToCollection(ArrayList::new, null));
+            assertThatNullPointerException().isThrownBy(() ->
+                    StreamUtils.arrayToCollection((Class<Collection>) null, new String[0]));
+        }
+
+        @Test
+        void derivedStreamsCloseTheirSource() {
+            AtomicInteger closed = new AtomicInteger();
+            Stream<Integer> source = Stream.of(1, 2, 3, 4).onClose(closed::incrementAndGet);
+
+            try (Stream<List<Integer>> batched = StreamUtils.batch(source, 2)) {
+                assertThat(batched).hasSize(2);
+            }
+
+            assertThat(closed).hasValue(1);
+        }
+
+        @Test
+        void zipClosesBothSources() {
+            AtomicInteger closed = new AtomicInteger();
+            Stream<Integer> left = Stream.of(1).onClose(closed::incrementAndGet);
+            Stream<Integer> right = Stream.of(2).onClose(closed::incrementAndGet);
+
+            try (Stream<Pair<Integer, Integer>> zipped = StreamUtils.zip(left, right)) {
+                assertThat(zipped).hasSize(1);
+            }
+
+            assertThat(closed).hasValue(2);
+        }
+
+        @Test
+        void operatorsChainTogether() {
+            List<String> result = StreamUtils.zip(
+                            StreamUtils.range(0, 6),
+                            Stream.of("a", "b", "c", "d", "e", "f"),
+                            (index, letter) -> index + letter)
+                    .collect(Collectors.collectingAndThen(
+                            Collectors.toList(),
+                            list -> StreamUtils.batch(list.stream(), 2).map(Object::toString).toList()));
+
+            assertThat(result).containsExactly("[0a, 1b]", "[2c, 3d]", "[4e, 5f]");
+        }
     }
 
-    @Test
-    public void testEmptyIterableAsStream() {
-        Iterable<String> emptyIterable = Collections.emptyList();
-        Stream<String> streamFromEmptyIterable = StreamUtils.asStream(emptyIterable);
-        assertNotNull(streamFromEmptyIterable);
-        List<String> collectedList = streamFromEmptyIterable.collect(Collectors.toList());
-        assertTrue(collectedList.isEmpty());
-    }
-
-    @Test
-    void testFilterByType() {
-        Stream<Object> mixedStream = Stream.of(1, "two", 3, "four");
-        Stream<String> stringStream = StreamUtils.filterByType(mixedStream, String.class);
-        assertArrayEquals(new String[]{"two", "four"}, stringStream.toArray());
-    }
-
-    @Test
-    void testToList() {
-        Stream<Integer> stream = Stream.of(1, 2, 3);
-        List<Integer> list = StreamUtils.toList(stream);
-        assertEquals(Arrays.asList(1, 2, 3), list);
-    }
-
-    @Test
-    void testToSet() {
-        Stream<Integer> stream = Stream.of(1, 2, 3, 2);
-        Set<Integer> set = StreamUtils.toSet(stream);
-        assertEquals(new HashSet<>(Arrays.asList(1, 2, 3)), set);
-    }
-
-    @Test
-    void testToMap() {
-        Stream<String> stream = Stream.of("a", "bb", "ccc");
-        Map<Integer, String> map = StreamUtils.toMap(stream, String::length, Function.identity());
-        Map<Integer, String> expected = new HashMap<>();
-        expected.put(1, "a");
-        expected.put(2, "bb");
-        expected.put(3, "ccc");
-        assertEquals(expected, map);
-    }
-
-    @Test
-    void testGroupBy() {
-        Stream<String> stream = Stream.of("a", "bb", "ccc", "d");
-        Map<Integer, List<String>> map = StreamUtils.groupBy(stream, String::length);
-        Map<Integer, List<String>> expected = new HashMap<>();
-        expected.put(1, Arrays.asList("a", "d"));
-        expected.put(2, Collections.singletonList("bb"));
-        expected.put(3, Collections.singletonList("ccc"));
-        assertEquals(expected, map);
-    }
-
-    @Test
-    void testPartitionBy() {
-        Stream<Integer> stream = Stream.of(1, 2, 3, 4, 5);
-        Map<Boolean, List<Integer>> map = StreamUtils.partitionBy(stream, x -> x % 2 == 0);
-        assertEquals(Arrays.asList(2, 4), map.get(true));
-        assertEquals(Arrays.asList(1, 3, 5), map.get(false));
-    }
-
-    @Test
-    void testStreamOfNullable() {
-        Stream<String> stream = StreamUtils.streamOfNullable("test");
-        assertArrayEquals(new String[]{"test"}, stream.toArray());
-
-        Stream<String> nullStream = StreamUtils.streamOfNullable(null);
-        assertEquals(0, nullStream.count());
-    }
-
-    @Test
-    void testConcatStreams() {
-        Stream<String> stream1 = Stream.of("a", "b");
-        Stream<String> stream2 = Stream.of("c", "d");
-        Stream<String> resultStream = StreamUtils.concatStreams(stream1, stream2);
-        assertArrayEquals(new String[]{"a", "b", "c", "d"}, resultStream.toArray());
-    }
-
-    @Test
-    void testZip() {
-        Stream<String> stream1 = Stream.of("a", "b");
-        Stream<Integer> stream2 = Stream.of(1, 2);
-        List<Pair<String, Integer>> zipped = StreamUtils.zip(stream1, stream2).toList();
-        assertEquals(Arrays.asList(new Pair<>("a", 1), new Pair<>("b", 2)), zipped);
-    }
-
-    @Test
-    void testPeekAndReturn() {
-        List<Integer> list = new ArrayList<>();
-        Stream<Integer> stream = Stream.of(1, 2, 3);
-        StreamUtils.peekAndReturn(stream, list::add).forEach(x -> {
-        });
-        assertEquals(Arrays.asList(1, 2, 3), list);
-    }
-
-    @Test
-    void testFindFirst() {
-        Stream<Integer> stream = Stream.of(1, 2, 3);
-        assertEquals(Optional.of(1), StreamUtils.findFirst(stream));
-    }
-
-    @Test
-    void testBatchProcess() {
-        Stream<Integer> stream = Stream.of(1, 2, 3, 4, 5, 6);
-        List<List<Integer>> batches = StreamUtils.batchProcess(stream, 2).toList();
-        assertEquals(Arrays.asList(Arrays.asList(1, 2), Arrays.asList(3, 4), Arrays.asList(5, 6)), batches);
-    }
-
-    @Test
-    void testParallelFilter() {
-        Stream<Integer> stream = Stream.of(1, 2, 3, 4, 5);
-        List<Integer> evenNumbers = StreamUtils.parallelFilter(stream, x -> x % 2 == 0).toList();
-        assertEquals(Arrays.asList(2, 4), evenNumbers);
-    }
-
-    @Test
-    void testParallelMap() {
-        Stream<Integer> stream = Stream.of(1, 2, 3, 4, 5);
-        List<Integer> doubled = StreamUtils.parallelMap(stream, x -> x * 2).toList();
-        assertEquals(Arrays.asList(2, 4, 6, 8, 10), doubled);
-    }
-
-    @Test
-    void testDistinctByKey() {
-        Stream<String> stream = Stream.of("apple", "banana", "apricot", "cherry");
-        List<String> distinct = stream.filter(StreamUtils.distinctByKey(s -> s.charAt(0))).toList();
-        assertEquals(Arrays.asList("apple", "banana", "cherry"), distinct);
-    }
-
-    @Test
-    void testStreamifyIterator() {
-        List<String> list = Arrays.asList("a", "b", "c");
-        Iterator<String> iterator = list.iterator();
-        List<String> result = StreamUtils.streamify(iterator).toList();
-        assertEquals(list, result);
-    }
-
-    @Test
-    void testStreamifyIterable() {
-        List<String> list = Arrays.asList("a", "b", "c");
-        List<String> result = StreamUtils.streamify(list).toList();
-        assertEquals(list, result);
-    }
-
-    @Test
-    void testFlatMapToPair() {
-        Stream<String> stream = Stream.of("a", "b");
-        Stream<Pair<String, Integer>> pairStream = StreamUtils.flatMapToPair(stream, s -> Stream.of(s.length(), s.length() + 1));
-        List<Pair<String, Integer>> expected = Arrays.asList(
-                new Pair<>("a", 1), new Pair<>("a", 2),
-                new Pair<>("b", 1), new Pair<>("b", 2)
-        );
-        assertEquals(expected, pairStream.toList());
-    }
-
-    @Test
-    void testFilterNot() {
-        Stream<Integer> stream = Stream.of(1, 2, 3, 4, 5);
-        Stream<Integer> result = StreamUtils.filterNot(stream, x -> x % 2 == 0);
-        assertArrayEquals(new Integer[]{1, 3, 5}, result.toArray());
-    }
-
-    @Test
-    void testTakeWhile() {
-        Stream<Integer> stream = Stream.of(1, 2, 3, 4, 5);
-        Stream<Integer> result = StreamUtils.takeWhile(stream, x -> x < 4);
-        assertArrayEquals(new Integer[]{1, 2, 3}, result.toArray());
-    }
-
-    @Test
-    void testMapToIndex() {
-        Stream<String> stream = Stream.of("a", "b", "c");
-        Stream<Pair<Integer, String>> result = StreamUtils.mapToIndex(stream);
-        List<Pair<Integer, String>> expected = Arrays.asList(
-                new Pair<>(0, "a"), new Pair<>(1, "b"), new Pair<>(2, "c")
-        );
-        assertEquals(expected, result.toList());
-    }
-
-    @Test
-    public void testCustomRangeAsStream() {
-        int start = 1;
-        int end = 6;
-        List<Integer> expected = Arrays.asList(1, 2, 3, 4, 5);
-        List<Integer> result = StreamUtils.customRangeAsStream(start, end).collect(Collectors.toList());
-        assertEquals(expected, result);
+    private static Predicate<Integer> even() {
+        return value -> value % 2 == 0;
     }
 }
