@@ -1,21 +1,150 @@
 plugins {
-    id 'java'
+    id 'java-library'
+    id 'jacoco'
+    id 'maven-publish'
+    // Benchmarks only, never part of `build`. Run them with `./gradlew jmh`.
+    id 'me.champeau.jmh' version '0.7.2'
 }
 
-group 'org.streamer'
-version '1.0-SNAPSHOT'
+group = 'org.streamer'
+version = '2.0.0'
+description = 'Stream operators and collectors that fill the gaps in java.util.stream'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withJavadocJar()
+    withSourcesJar()
+}
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    implementation group: 'org.apache.logging.log4j', name: 'log4j-api', version: '2.17.0'
-    implementation group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.17.1'
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+    // The library itself is dependency free on purpose: it is meant to be dropped into any
+    // project without dragging a transitive tree along.
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.assertj:assertj-core:3.27.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-test {
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:all' << '-parameters'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    // Default visibility is protected, so the package private spliterators stay out of the docs
+    // without any exclusion rule.
+    options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}
+
+tasks.named('jar') {
+    manifest {
+        attributes(
+                'Implementation-Title': project.name,
+                'Implementation-Version': project.version
+        )
+    }
+}
+
+// The tests live in the same package as the code they exercise and reach package private types.
+// Running them on the class path keeps module boundaries out of the way.
+tasks.named('compileTestJava') {
+    modularity.inferModulePath = false
+}
+
+tasks.named('test') {
+    modularity.inferModulePath = false
+}
+
+tasks.named('compileJmhJava') {
+    modularity.inferModulePath = false
+}
+
+jmh {
+    // Around five minutes for the whole suite. Enough to keep the error bars small enough to
+    // draw conclusions from; raise the forks before quoting a number anywhere that matters.
+    fork = 2
+    warmupIterations = 5
+    iterations = 8
+    timeOnIteration = '1s'
+    warmup = '1s'
+    resultFormat = 'TEXT'
+    includeTests = false
+}
+
+// Byte for byte identical archives across machines and builds.
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.named('test') {
     useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+    }
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+jacoco {
+    toolVersion = '0.8.12'
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+tasks.named('jacocoTestCoverageVerification') {
+    violationRules {
+        rule {
+            limit {
+                counter = 'INSTRUCTION'
+                minimum = 0.95
+            }
+        }
+        rule {
+            limit {
+                counter = 'BRANCH'
+                minimum = 0.85
+            }
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('jacocoTestCoverageVerification')
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            pom {
+                name = 'Streamer'
+                description = project.description
+                url = 'https://github.com/alxkm/streamer'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/alxkm/streamer'
+                    connection = 'scm:git:https://github.com/alxkm/streamer.git'
+                }
+            }
+        }
+    }
 }
