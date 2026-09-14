@@ -38,7 +38,7 @@ jobs:
           distribution: temurin
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build, test and verify coverage
         run: ./gradlew build --stacktrace
@@ -81,7 +81,7 @@ jobs:
           distribution: temurin
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # Doclint is on, so a broken @link or a missing @param fails the build.
       - name: Generate Javadoc
@@ -103,4 +103,4 @@ jobs:
           distribution: temurin
 
       - name: Submit dependency graph
-        uses: gradle/actions/dependency-submission@v4
+        uses: gradle/actions/dependency-submission@v6
