@@ -1,0 +1,32 @@
+name: Operator request
+description: Propose a new stream operator or collector
+labels: [ enhancement ]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you writing by hand today, and why is it awkward?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed signature and behaviour
+      render: java
+      placeholder: |
+        static <T> Stream<T> cycle(Stream<T> stream, int times);
+        // cycle(Stream.of(1, 2), 2) -> 1, 2, 1, 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What the JDK already offers
+      description: >
+        Operators that java.util.stream already covers in one line are out of scope.
+        Say why the existing API is not enough.
+    validations:
+      required: true

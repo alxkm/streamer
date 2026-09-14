@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on JDK ${{ matrix.java }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [ '17', '21' ]
+        os: [ ubuntu-latest ]
+        include:
+          # The library targets JDK 17 but has to keep working on Windows too, where file
+          # handling and the default charset differ.
+          - java: '17'
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build, test and verify coverage
+        run: ./gradlew build --stacktrace
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.os }}-jdk${{ matrix.java }}
+          path: build/reports/tests/test
+          retention-days: 7
+
+      - name: Publish coverage summary
+        if: matrix.java == '17' && matrix.os == 'ubuntu-latest'
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+          root = ET.parse('build/reports/jacoco/test/jacocoTestReport.xml').getroot()
+          print('## Coverage\n')
+          print('| Counter | Covered | Total | % |')
+          print('| --- | --- | --- | --- |')
+          for counter in root.findall('counter'):
+              missed, covered = int(counter.get('missed')), int(counter.get('covered'))
+              total = missed + covered
+              print(f"| {counter.get('type').title()} | {covered} | {total} | {100 * covered / total:.1f} |")
+          PY
+
+  javadoc:
+    name: Javadoc
+    runs-on: ubuntu-latest
+    # On master the dedicated javadoc workflow builds and publishes the same docs.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Doclint is on, so a broken @link or a missing @param fails the build.
+      - name: Generate Javadoc
+        run: ./gradlew javadoc
+
+  dependency-submission:
+    name: Dependency graph
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Submit dependency graph
+        uses: gradle/actions/dependency-submission@v4
