@@ -2,6 +2,8 @@ plugins {
     id 'java-library'
     id 'jacoco'
     id 'maven-publish'
+    // Benchmarks only, never part of `build`. Run them with `./gradlew jmh`.
+    id 'me.champeau.jmh' version '0.7.2'
 }
 
 group = 'org.streamer'
@@ -58,6 +60,22 @@ tasks.named('compileTestJava') {
 
 tasks.named('test') {
     modularity.inferModulePath = false
+}
+
+tasks.named('compileJmhJava') {
+    modularity.inferModulePath = false
+}
+
+jmh {
+    // Around five minutes for the whole suite. Enough to keep the error bars small enough to
+    // draw conclusions from; raise the forks before quoting a number anywhere that matters.
+    fork = 2
+    warmupIterations = 5
+    iterations = 8
+    timeOnIteration = '1s'
+    warmup = '1s'
+    resultFormat = 'TEXT'
+    includeTests = false
 }
 
 // Byte for byte identical archives across machines and builds.
