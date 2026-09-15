@@ -3,7 +3,7 @@ plugins {
     id 'jacoco'
     id 'maven-publish'
     // Benchmarks only, never part of `build`. Run them with `./gradlew jmh`.
-    id 'me.champeau.jmh' version '0.7.2'
+    id 'me.champeau.jmh' version '0.7.3'
 }
 
 group = 'org.streamer'
