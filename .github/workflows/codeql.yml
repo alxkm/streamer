@@ -36,7 +36,7 @@ jobs:
           queries: security-and-quality
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build
         run: ./gradlew classes
