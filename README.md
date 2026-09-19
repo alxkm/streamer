@@ -1,4 +1,7 @@
-<h1 align="center">Streamer</h1>
+<h1 align="center">
+  <img src="docs/logo.svg" height="72px" alt="" /><br/>
+  Streamer
+</h1>
 
 <p align="center">
   <b>The stream operators <code>java.util.stream</code> forgot.</b><br>
@@ -13,6 +16,12 @@
   <img alt="Java 17+" src="https://img.shields.io/badge/Java-17%2B-007396?logo=openjdk&logoColor=white">
   <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-none-success">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+</p>
+
+<p align="center">
+  <a href="https://alxkm.github.io/streamer/">Javadoc</a> &middot;
+  <a href="CHANGELOG.md">Changelog</a> &middot;
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 ---
