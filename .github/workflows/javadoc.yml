@@ -41,6 +41,10 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
+        with:
+          # Without this the step fails on a repository where Pages was never turned on,
+          # which is every repository until the first successful deployment.
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
