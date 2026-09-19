@@ -42,8 +42,10 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v6
         with:
-          # Without this the step fails on a repository where Pages was never turned on,
-          # which is every repository until the first successful deployment.
+          # Only helps when the token may administer the repository. The workflow GITHUB_TOKEN
+          # may not, so on a fresh fork this still fails with "Create Pages site failed:
+          # Resource not accessible by integration". Turn Pages on once by hand in
+          # Settings, Pages, Source: GitHub Actions, and every run after that just deploys.
           enablement: true
 
       - name: Upload artifact
