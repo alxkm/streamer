@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 8 120 80" width="120" height="80"
+     role="img" aria-label="Streamer">
+  <title>Streamer</title>
+  <defs>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2f6fb8"/>
+      <stop offset="55%" stop-color="#4a90d9"/>
+      <stop offset="100%" stop-color="#38c6e8"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#flow)" stroke-linecap="round">
+    <path opacity="0.42" stroke-width="5"
+          d="M19.5 26c6.75-13.3 20.25-13.3 27 0c6.75 13.3 20.25 13.3 27 0c6.75-13.3 20.25-13.3 27 0"/>
+    <path stroke-width="6.5"
+          d="M6 48c6.75-13.3 20.25-13.3 27 0c6.75 13.3 20.25 13.3 27 0c6.75-13.3 20.25-13.3 27 0c6.75 13.3 20.25 13.3 27 0"/>
+    <path opacity="0.42" stroke-width="5"
+          d="M19.5 70c6.75-13.3 20.25-13.3 27 0c6.75 13.3 20.25 13.3 27 0c6.75-13.3 20.25-13.3 27 0"/>
+  </g>
+</svg>
